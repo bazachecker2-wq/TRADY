@@ -1,0 +1,5 @@
+{
+  "name": "CryptoAI Analyst Live",
+  "description": "Real-time AI Trading Agent using Live WebSocket Data and Gemini 2.5 models.",
+  "requestFramePermissions": []
+}
