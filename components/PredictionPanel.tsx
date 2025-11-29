@@ -1,6 +1,8 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { MarketPrediction } from '../types';
+import { formatCurrency } from '../services/marketService';
 
 interface PredictionPanelProps {
   prediction: MarketPrediction | null;
@@ -53,8 +55,8 @@ const PredictionPanel: React.FC<PredictionPanelProps> = ({ prediction, currentPr
              <span className="text-white text-xs">AI</span>
           </div>
           <div>
-            <h3 className="text-gray-200 font-bold text-sm uppercase tracking-wider">Прогноз "Advisor" (24ч)</h3>
-            <div className="text-[10px] text-gray-500 font-mono">Консенсус моделей</div>
+            <h3 className="text-gray-200 font-bold text-sm uppercase tracking-wider">Прогноз "Advisor" (15 мин)</h3>
+            <div className="text-[10px] text-gray-500 font-mono">Совокупный прогноз цены</div>
           </div>
         </div>
         
@@ -65,16 +67,23 @@ const PredictionPanel: React.FC<PredictionPanelProps> = ({ prediction, currentPr
       </div>
 
       {/* Target & Reasoning */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
          <div className="bg-black/20 rounded p-2 border border-gray-700/50">
-            <div className="text-[10px] text-gray-400 mb-1">ЦЕЛЕВОЙ ДИАПАЗОН</div>
-            <div className="text-xl font-mono font-bold text-white">
-              {/* Added safe optional chaining/nullish coalescing */}
+            <div className="text-[10px] text-gray-400 mb-1 uppercase">Диапазон</div>
+            <div className="text-sm font-mono font-bold text-gray-300">
               ${prediction.priceMin?.toLocaleString() ?? '...'} - ${prediction.priceMax?.toLocaleString() ?? '...'}
             </div>
          </div>
+
+         <div className="bg-blue-500/10 rounded p-2 border border-blue-500/30">
+            <div className="text-[10px] text-blue-300 mb-1 uppercase font-bold">🎯 Целевая Цена</div>
+            <div className="text-xl font-mono font-bold text-white">
+              ${prediction.predictedPrice?.toLocaleString() ?? '...'}
+            </div>
+         </div>
+
          <div className="bg-black/20 rounded p-2 border border-gray-700/50 flex flex-col justify-center">
-             <div className="text-[10px] text-gray-400 mb-1">ОБОСНОВАНИЕ</div>
+             <div className="text-[10px] text-gray-400 mb-1 uppercase">Обоснование</div>
              <div className="text-xs text-gray-300 italic">"{prediction.reasoning ?? 'Анализ...'}"</div>
          </div>
       </div>

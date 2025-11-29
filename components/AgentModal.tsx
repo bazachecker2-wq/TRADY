@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { AgentProfile, ChatMessage, PrivateChatMessage } from '../types';
 import { formatCurrency, formatTime } from '../services/marketService';
@@ -115,12 +117,12 @@ const AgentModal: React.FC<AgentModalProps> = ({
                 <div className="p-6 space-y-6 animate-fadeIn">
                    <div className="grid grid-cols-2 gap-4">
                       <div className="bg-[#13161c] p-4 rounded-xl border border-gray-800">
-                         <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Баланс Кошелька</div>
-                         <div className={`text-2xl font-mono font-bold ${agent.balance >= 1000 ? 'text-green-400' : 'text-red-400'}`}>
-                            {formatCurrency(agent.balance)}
+                         <div className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Live Equity (Текущий)</div>
+                         <div className={`text-2xl font-mono font-bold ${agent.equity >= 1000 ? 'text-green-400' : 'text-red-400'}`}>
+                            {formatCurrency(agent.equity)}
                          </div>
-                         <div className="text-[10px] text-gray-600 mt-2">
-                            Начальный депозит: $1,000.00
+                         <div className="text-[10px] text-gray-600 mt-2 flex justify-between">
+                            <span>Кэш (Realized): {formatCurrency(agent.balance)}</span>
                          </div>
                       </div>
                       <div className="bg-[#13161c] p-4 rounded-xl border border-gray-800">

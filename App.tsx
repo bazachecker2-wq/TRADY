@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Header from './components/Header';
@@ -15,9 +16,9 @@ import { subscribeToMarketData, formatCurrency } from './services/marketService'
 import { analyzeMarket, getConsensusForecast, getTeamDiscussion, performStrategicReview, chatWithAgent, getMeetingConclusion } from './services/geminiService';
 
 const INITIAL_AGENTS: AgentProfile[] = [
-  { id: 'agent-1', name: 'Альфа', model: 'Gemini 2.5 Flash', style: 'Scalper', color: 'bg-yellow-500/20 text-yellow-500', avatar: '⚡', description: 'Быстрые сделки (Google)', balance: 1000, winRate: 68, tradesCount: 0, recentPerformance: [], decisionTimer: 10, lastActionTime: Date.now() },
-  { id: 'agent-2', name: 'Омега', model: 'OpenRouter (DeepSeek R1)', style: 'Swing', color: 'bg-purple-500/20 text-purple-500', avatar: '🧠', description: 'Deep reasoning', balance: 1000, winRate: 54, tradesCount: 0, recentPerformance: [], decisionTimer: 30, lastActionTime: Date.now() },
-  { id: 'agent-3', name: 'Дельта', model: 'Gemini 2.5 Flash', style: 'Arbitrage', color: 'bg-blue-500/20 text-blue-500', avatar: '⚖️', description: 'Сравнение цен', balance: 1000, winRate: 92, tradesCount: 0, recentPerformance: [], decisionTimer: 50, lastActionTime: Date.now() },
+  { id: 'agent-1', name: 'Альфа', model: 'Gemini 2.5 Flash', style: 'Scalper', color: 'bg-yellow-500/20 text-yellow-500', avatar: '⚡', description: 'Быстрые сделки (Google)', balance: 1000, equity: 1000, winRate: 68, tradesCount: 0, recentPerformance: [], decisionTimer: 10, lastActionTime: Date.now() },
+  { id: 'agent-2', name: 'Омега', model: 'OpenRouter (DeepSeek R1)', style: 'Swing', color: 'bg-purple-500/20 text-purple-500', avatar: '🧠', description: 'Deep reasoning', balance: 1000, equity: 1000, winRate: 54, tradesCount: 0, recentPerformance: [], decisionTimer: 30, lastActionTime: Date.now() },
+  { id: 'agent-3', name: 'Дельта', model: 'Gemini 2.5 Flash', style: 'Arbitrage', color: 'bg-blue-500/20 text-blue-500', avatar: '⚖️', description: 'Сравнение цен', balance: 1000, equity: 1000, winRate: 92, tradesCount: 0, recentPerformance: [], decisionTimer: 50, lastActionTime: Date.now() },
 ];
 
 const WORK_DURATION = 300; 
@@ -63,7 +64,7 @@ const App: React.FC = () => {
     setChatMessages([{
       id: 'system-1',
       agentId: 'system',
-      text: 'Система запущена. Агент Омега использует OpenRouter.',
+      text: 'Система запущена. Демо-счет активирован. Котировки реальные (Binance).',
       timestamp: Date.now(),
       type: 'SYSTEM'
     }]);
@@ -245,11 +246,12 @@ const App: React.FC = () => {
     }
   }, [currentData, consensusPrediction]);
 
+  // Main Market Data Logic - Calculates PnL and updates Wallets in Real-Time
   useEffect(() => {
     if (!currentData) return;
     const currentPrice = currentData.btcPrice;
-    let totalUnrealizedPnl = 0;
     
+    // 1. Calculate new PnL for all positions
     const updatedPositions = positions.map(pos => {
         if (pos.status === 'CLOSED') return pos;
 
@@ -257,6 +259,7 @@ const App: React.FC = () => {
         const rawPnl = priceDiff * (pos.size / pos.entryPrice); 
         const pnlPercent = (rawPnl / (pos.size / pos.leverage)) * 100;
         
+        // Trailing Stop Logic
         let newStopLoss = pos.stopLoss;
         let trailingActive = pos.trailingActive;
         if (!pos.trailingActive && pnlPercent > 0.3) {
@@ -279,53 +282,85 @@ const App: React.FC = () => {
            return { ...pos, pnl: rawPnl, pnlPercent, status: 'CLOSED', closeReason: hitTP ? 'TP' : 'SL' };
         }
 
-        totalUnrealizedPnl += rawPnl;
         return { ...pos, pnl: rawPnl, pnlPercent, stopLoss: newStopLoss, trailingActive };
     });
 
+    setPositions(updatedPositions);
+
+    // 2. Identify Just Closed positions to update Realized Balance
     const justClosed = updatedPositions.filter(p => p.status === 'CLOSED' && positions.find(old => old.id === p.id && old.status === 'OPEN'));
-    if (justClosed.length > 0) {
-       setAgents(prevAgents => prevAgents.map(agent => {
-          const agentTrades = justClosed.filter(p => p.agentId === agent.id);
-          if (agentTrades.length === 0) return agent;
+    
+    // 3. Update Agents (Both Realized Balance and Live Equity)
+    setAgents(prevAgents => {
+       return prevAgents.map(agent => {
+          // A. Handle Realized PnL (Closed Trades)
+          const agentClosedTrades = justClosed.filter(p => p.agentId === agent.id);
+          let newBalance = agent.balance;
+          let newTradesCount = agent.tradesCount;
+          let newWinRate = agent.winRate;
+          let newHistory = agent.recentPerformance;
+
+          if (agentClosedTrades.length > 0) {
+             const pnlChange = agentClosedTrades.reduce((sum, p) => sum + p.pnl, 0);
+             // Return the margin used for these trades to the balance
+             const marginsReturned = agentClosedTrades.reduce((sum, p) => sum + (p.size / p.leverage), 0);
+             const wins = agentClosedTrades.filter(p => p.pnl > 0).length;
+             
+             newBalance += pnlChange + marginsReturned;
+             newTradesCount += agentClosedTrades.length;
+             newWinRate = Math.round(((agent.winRate * agent.tradesCount) + (wins * 100)) / (newTradesCount));
+             newHistory = [...agent.recentPerformance, ...agentClosedTrades.map(p => p.pnl > 0 ? 'WIN' : 'LOSS' as const)].slice(-5);
+          }
+
+          // B. Handle Floating PnL (Open Positions) - Update Equity
+          // Equity = FreeCash + MarginLockedInOpenPositions + UnrealizedPnL
+          const agentOpenTrades = updatedPositions.filter(p => p.agentId === agent.id && p.status === 'OPEN');
+          const floatingPnl = agentOpenTrades.reduce((sum, p) => sum + p.pnl, 0);
+          const marginLocked = agentOpenTrades.reduce((sum, p) => sum + (p.size / p.leverage), 0);
           
-          const pnlChange = agentTrades.reduce((sum, p) => sum + p.pnl, 0);
-          const marginsReturned = agentTrades.reduce((sum, p) => sum + (p.size / p.leverage), 0);
-          const wins = agentTrades.filter(p => p.pnl > 0).length;
-          
+          const newEquity = newBalance + marginLocked + floatingPnl;
+
           return {
              ...agent,
-             balance: agent.balance + pnlChange + marginsReturned,
-             tradesCount: agent.tradesCount + agentTrades.length,
-             winRate: Math.round(((agent.winRate * agent.tradesCount) + (wins * 100)) / (agent.tradesCount + agentTrades.length)),
-             recentPerformance: [...agent.recentPerformance, ...agentTrades.map(p => p.pnl > 0 ? 'WIN' : 'LOSS' as const)].slice(-5),
-             lastActionTime: Date.now()
+             balance: newBalance,
+             equity: newEquity,
+             tradesCount: newTradesCount,
+             winRate: newWinRate,
+             recentPerformance: newHistory,
+             lastActionTime: agentClosedTrades.length > 0 ? Date.now() : agent.lastActionTime
           };
-       }));
-       
-       justClosed.forEach(trade => {
-          setChatMessages(prev => [...prev, {
-              id: uuidv4(),
-              agentId: trade.agentId,
-              text: `Сделка закрыта (${trade.closeReason === 'TP' ? 'ПРИБЫЛЬ' : 'ЗАЩИТА'}). Профит: $${trade.pnl.toFixed(2)}.`,
-              timestamp: Date.now(),
-              type: 'COMMENT'
-          }]);
        });
-    }
+    });
 
-    setPositions(updatedPositions);
-    const totalBalance = agents.reduce((sum, a) => sum + a.balance, 0);
-    setTotalEquity(totalBalance + totalUnrealizedPnl);
+    // 4. Log Close Events
+    justClosed.forEach(trade => {
+       setChatMessages(prev => [...prev, {
+           id: uuidv4(),
+           agentId: trade.agentId,
+           text: `Сделка закрыта (${trade.closeReason === 'TP' ? 'ПРИБЫЛЬ' : 'ЗАЩИТА'}). Профит: $${trade.pnl.toFixed(2)}.`,
+           timestamp: Date.now(),
+           type: 'COMMENT'
+       }]);
+    });
 
-  }, [currentData]);
+    setTotalEquity(prev => agents.reduce((sum, a) => sum + a.equity, 0));
 
+  }, [currentData]); 
+
+  // AI Trading Loop
   useEffect(() => {
     if (!currentData || marketHistory.length < 5) return;
     
     const readyAgents = agents.filter(a => a.decisionTimer <= 0 && !agentAnalyzing[a.id]);
     
     if (readyAgents.length === 0) return;
+
+    // Grab recent chat history to pass to context
+    const recentChatText = chatMessages.slice(-5).map(m => {
+       const a = agents.find(ag => ag.id === m.agentId);
+       const name = a ? a.name : 'System';
+       return `${name}: ${m.text}`;
+    }).join('\n');
 
     readyAgents.forEach(activeAgent => {
         setAgents(prev => prev.map(a => a.id === activeAgent.id ? { ...a, decisionTimer: DECISION_INTERVAL } : a));
@@ -334,7 +369,8 @@ const App: React.FC = () => {
             setAgentAnalyzing(prev => ({ ...prev, [activeAgent.id]: true }));
             try {
                 const agentPosition = positions.find(p => p.agentId === activeAgent.id && p.status === 'OPEN');
-                const signal = await analyzeMarket(marketHistory, activeAgent, agentPosition);
+                // Pass recentChatText to analysis
+                const signal = await analyzeMarket(marketHistory, activeAgent, agentPosition, recentChatText);
                 setAgentSignals(prev => ({ ...prev, [activeAgent.id]: signal }));
 
                 if (signal.action === TradeAction.CLOSE && agentPosition) {
@@ -342,14 +378,6 @@ const App: React.FC = () => {
                 } else if ((signal.action === TradeAction.LONG || signal.action === TradeAction.SHORT)) {
                     if (signal.confidence > 60) {
                         executeTrade(activeAgent.id, signal);
-                        setChatMessages(prev => [...prev, {
-                            id: uuidv4(),
-                            agentId: activeAgent.id,
-                            text: signal.reasoning,
-                            timestamp: Date.now(),
-                            type: 'SIGNAL',
-                            relatedSignal: signal
-                        }]);
                     }
                 }
             } catch (e) {
@@ -361,7 +389,7 @@ const App: React.FC = () => {
         runAI();
     });
 
-  }, [agents, marketHistory, currentData, agentAnalyzing, positions]);
+  }, [agents, marketHistory, currentData, agentAnalyzing, positions, chatMessages]);
 
   const executeClose = (agentId: string, position: Position, reasoning: string) => {
     setPositions(prev => prev.map(p => {
@@ -374,7 +402,7 @@ const App: React.FC = () => {
     setChatMessages(prev => [...prev, {
         id: uuidv4(),
         agentId: agentId,
-        text: `ЗАКРЫВАЮ СДЕЛКУ ВРУЧНУЮ: ${reasoning}`,
+        text: `Закрываю: ${reasoning}`,
         timestamp: Date.now(),
         type: 'COMMENT'
     }]);
@@ -391,17 +419,26 @@ const App: React.FC = () => {
       const existingPos = positions.find(p => p.agentId === agentId && p.status === 'OPEN');
       if (existingPos) return prevAgents;
 
-      const riskFactor = signal.confidence / 100;
-      const margin = Math.min(agent.balance * 0.1, 200); 
+      // Bet size = 20% of balance (Real cash)
+      const margin = Math.max(agent.balance * 0.20, 10); 
       
-      if (margin < 10) return prevAgents;
+      if (agent.balance < margin) {
+         return prevAgents;
+      }
+
+      // SLIPPAGE SIMULATION: Demo bets close to real data
+      // Add random slippage (0.01% - 0.03%) to replicate real market conditions
+      const slippagePercent = 0.0001 + (Math.random() * 0.0002);
+      const executionPrice = signal.action === 'LONG' 
+         ? currentData.btcPrice * (1 + slippagePercent) // Buy slightly higher
+         : currentData.btcPrice * (1 - slippagePercent); // Sell slightly lower
       
       const newPos: Position = {
         id: uuidv4(),
         agentId,
         symbol: 'BTCUSDT',
         side: signal.action as 'LONG' | 'SHORT',
-        entryPrice: currentData.btcPrice,
+        entryPrice: executionPrice, 
         size: margin * signal.leverage,
         leverage: signal.leverage,
         stopLoss: signal.stopLoss,
@@ -413,11 +450,31 @@ const App: React.FC = () => {
         trailingActive: false
       };
       
+      // Log the trade with explicit Amount and Explanation
+      setChatMessages(prev => [...prev, {
+          id: uuidv4(),
+          agentId: activeAgent.id,
+          text: signal.reasoning,
+          timestamp: Date.now(),
+          type: 'SIGNAL',
+          relatedSignal: { ...signal, betAmount: margin }, // Store bet amount
+          betAmount: margin
+      }]);
+
+      // Immediate State Update
       setPositions(prev => [...prev, newPos]);
       const newAgents = [...prevAgents];
-      newAgents[agentIndex] = { ...agent, balance: agent.balance - margin, lastActionTime: Date.now() };
+      // IMMEDIATE DEDUCTION: Reduce Balance to show money is "In Trade"
+      newAgents[agentIndex] = { 
+          ...agent, 
+          balance: agent.balance - margin, 
+          lastActionTime: Date.now() 
+      };
       return newAgents;
     });
+    
+    // Helper to get agent for the log above (closure issue workaround)
+    const activeAgent = agents.find(a => a.id === agentId)!;
   };
 
   if (!isConnected && !currentData) {

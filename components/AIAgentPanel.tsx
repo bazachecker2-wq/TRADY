@@ -1,3 +1,5 @@
+
+
 import React from 'react';
 import { AgentProfile, AISignal, TradeAction } from '../types';
 import { formatCurrency } from '../services/marketService';
@@ -22,10 +24,12 @@ const AgentBattlePanel: React.FC<AgentBattlePanelProps> = ({ agents, signals, an
         const isLong = signal?.action === TradeAction.LONG;
         const isShort = signal?.action === TradeAction.SHORT;
         const isWait = !isLong && !isShort;
-        const isProfitable = agent.balance >= 1000;
+        const isProfitable = agent.equity >= 1000;
         
         // Progress for Timer (Assuming max 60s for visual calculation)
         const timerPercent = (agent.decisionTimer / 60) * 100;
+        
+        const inTradeAmount = agent.equity - agent.balance;
         
         return (
           <div 
@@ -54,15 +58,27 @@ const AgentBattlePanel: React.FC<AgentBattlePanelProps> = ({ agents, signals, an
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-gray-100 group-hover:text-blue-200 transition-colors">{agent.name}</h3>
-                  <div className="text-[10px] text-gray-400 font-mono">{agent.model} • {agent.style === 'Scalper' ? 'Скальпер' : agent.style === 'Swing' ? 'Свинг' : 'Арбитраж'}</div>
+                  <div className="text-[10px] text-gray-400 font-mono">{agent.model}</div>
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-[10px] text-gray-500">КОШЕЛЕК</div>
-                <div className={`text-sm font-mono font-bold ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatCurrency(agent.balance, 0)}
+                <div className="text-[10px] text-gray-500">EQUITY (LIVE)</div>
+                <div className={`text-sm font-mono font-bold transition-all duration-300 ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatCurrency(agent.equity, 2)}
                 </div>
               </div>
+            </div>
+            
+            {/* Detailed Wallet Info */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+               <div className="bg-[#0b0d11] p-1.5 rounded border border-gray-800">
+                  <div className="text-[8px] text-gray-500 uppercase">Свободно</div>
+                  <div className="text-xs font-mono text-gray-300">{formatCurrency(agent.balance, 0)}</div>
+               </div>
+               <div className="bg-[#0b0d11] p-1.5 rounded border border-gray-800">
+                  <div className="text-[8px] text-gray-500 uppercase">В сделке</div>
+                  <div className="text-xs font-mono text-blue-300">{inTradeAmount > 1 ? formatCurrency(inTradeAmount, 0) : '-'}</div>
+               </div>
             </div>
 
             {/* Strategy Adaptation Display */}

@@ -1,6 +1,7 @@
+
 import React, { useEffect, useRef } from 'react';
 import { ChatMessage, AgentProfile } from '../types';
-import { formatTime } from '../services/marketService';
+import { formatTime, formatCurrency } from '../services/marketService';
 
 interface ThoughtTerminalProps {
   messages: ChatMessage[];
@@ -91,7 +92,13 @@ const ThoughtTerminal: React.FC<ThoughtTerminalProps> = ({ messages, agents, pha
                             {msg.relatedSignal?.action === 'LONG' ? '⬆ СТАВКА НА РОСТ' : '⬇ СТАВКА НА ПАДЕНИЕ'}
                         </span>
                         <span className="opacity-50">|</span>
-                        <span>Плечо x{msg.relatedSignal?.leverage}</span>
+                        <span>x{msg.relatedSignal?.leverage}</span>
+                        {msg.betAmount && (
+                            <>
+                                <span className="opacity-50">|</span>
+                                <span className="text-white font-bold">Ставка: {formatCurrency(msg.betAmount, 0)}</span>
+                            </>
+                        )}
                      </div>
                    )}
                    {msg.text}

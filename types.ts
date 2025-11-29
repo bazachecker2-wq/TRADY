@@ -60,7 +60,8 @@ export interface AgentProfile {
   color: string;
   avatar: string;
   description: string;
-  balance: number; // Individual wallet (Starts at $1000)
+  balance: number; // Realized Cash (Free to bet)
+  equity: number; // Dynamic Wallet (Cash + Floating PnL + Locked Margin)
   winRate: number;
   tradesCount: number;
   recentPerformance: ('WIN' | 'LOSS')[]; // Memory for In-Context Learning
@@ -78,6 +79,7 @@ export interface AISignal {
   leverage: number;
   confidence: number;
   reasoning: string;
+  betAmount?: number; // The calculated dollar amount for this trade
 }
 
 export interface ChatMessage {
@@ -87,6 +89,7 @@ export interface ChatMessage {
   timestamp: number;
   type: 'SIGNAL' | 'COMMENT' | 'SYSTEM' | 'PREDICTION' | 'STRATEGY_UPDATE';
   relatedSignal?: AISignal;
+  betAmount?: number;
 }
 
 export interface PrivateChatMessage {
@@ -110,6 +113,7 @@ export interface MarketPrediction {
   targetTime: number; // Time prediction is for
   priceMin: number;
   priceMax: number;
+  predictedPrice: number; // Specific target prediction
   reasoning: string;
   status: 'PENDING' | 'SUCCESS' | 'FAILED';
   finalPrice?: number;

@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { AISignal, TradeAction, MarketData, AgentProfile, MarketPrediction, Position } from '../types';
 
@@ -9,7 +10,7 @@ const MODEL_LIGHT = 'gemini-2.5-flash';
 const MODEL_MAIN = 'gemini-3-pro-preview';
 
 // --- OPENROUTER API ---
-const OPENROUTER_API_KEY = "sk-or-v1-placeholder-key-replace-me"; // Replace with real key for DeepSeek R1
+const OPENROUTER_API_KEY = "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";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export const callOpenRouterAI = async (systemInstruction: string, prompt: string, jsonMode: boolean = true): Promise<string> => {
@@ -23,23 +24,25 @@ export const callOpenRouterAI = async (systemInstruction: string, prompt: string
         "X-Title": "NeuroTrade AI"
       },
       body: JSON.stringify({
-        model: "deepseek/deepseek-r1:free", // Using Free Tier DeepSeek R1 or similar
+        model: "deepseek/deepseek-r1", 
         messages: [
           { role: "system", content: systemInstruction },
           { role: "user", content: prompt }
         ],
-        temperature: 0.7,
+        temperature: 0.6, // Slightly lower temp for more stable JSON
       })
     });
 
     if (!response.ok) {
-      // Graceful fallback if OpenRouter key is invalid or quota exceeded
       console.warn(`OpenRouter Error: ${response.status}. Falling back to Gemini.`);
       return callGeminiFallback(systemInstruction, prompt, jsonMode);
     }
 
     const data = await response.json();
     let text = data.choices?.[0]?.message?.content || "";
+    
+    // CRITICAL FIX: DeepSeek R1 often includes <think>...</think> blocks. We must remove them for JSON parsing.
+    text = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     
     // Clean up markdown code blocks if JSON is requested
     if (jsonMode) {
@@ -68,10 +71,7 @@ const callGeminiFallback = async (system: string, prompt: string, jsonMode: bool
 // --- PUTER.JS INTEGRATION (Hidden in Modal) ---
 export const launchPuterTask = async (taskDescription: string): Promise<string> => {
   try {
-    // Check if Puter is loaded globally
     if ((window as any).puter) {
-      // Use Puter AI (if available in v2 lib) or simple logic
-      // Puter.ai.chat is the standard for their AI endpoint
       const response = await (window as any).puter.ai.chat(taskDescription);
       return typeof response === 'string' ? response : JSON.stringify(response);
     } else {
@@ -95,9 +95,9 @@ const getSystemInstruction = (agent: AgentProfile) => {
     3. ЗАМЕНЯЙ СЛОВА: 
        - Вместо "Шорт" пиши "Ставлю на падение".
        - Вместо "Лонг" пиши "Ставлю на рост".
-       - Вместо "Стоп Лосс" пиши "Защита от убытка".
        - Вместо "Close" пиши "Закрываю сделку".
-    4. Будь краток. Максимум 12 слов.
+    4. Будь краток. Максимум 15 слов в обосновании (reasoning).
+    5. ОБЯЗАТЕЛЬНО: Твое обоснование (reasoning) должно быть понятным объяснением "почему". Например: "Вижу стену на продажу, цена отскочит вниз".
   `;
 
   // Learning Context
@@ -105,84 +105,106 @@ const getSystemInstruction = (agent: AgentProfile) => {
   if (agent.recentPerformance.length > 0) {
     const wins = agent.recentPerformance.filter(r => r === 'WIN').length;
     const losses = agent.recentPerformance.filter(r => r === 'LOSS').length;
-    learningContext = `\nТвои прошлые успехи: ${wins} побед, ${losses} поражений. УЧИСЬ НА ЭТОМ.`;
+    const winRate = agent.recentPerformance.length > 0 ? Math.round((wins / agent.recentPerformance.length) * 100) : 0;
+    learningContext = `\nТВОЯ СТАТИСТИКА (последние 5): ${wins} Побед, ${losses} Поражений. Винрейт: ${winRate}%. ${winRate < 50 ? "ТЫ ТЕРЯЕШЬ ДЕНЬГИ! ИЗМЕНИ ПОДХОД!" : "ТЫ ТОРГУЕШЬ ОТЛИЧНО, ДЕРЖИ РИТМ."}`;
   }
   
-  // Strategy Adaptation (Learned from opponents)
+  // Strategy Adaptation
   let adaptationContext = "";
   if (agent.strategyAdaptation) {
-    adaptationContext = `\n🔥 КОРРЕКТИРОВКА СТРАТЕГИИ (на основе анализа конкурентов): "${agent.strategyAdaptation}". ПРИМЕНЯЙ ЭТО В СДЕЛКАХ.`;
+    adaptationContext = `\n🔥 НОВАЯ ИНСТРУКЦИЯ ОТ ГЛАВНОГО: "${agent.strategyAdaptation}". ПРИМЕНЯЙ ЭТО В СДЕЛКАХ ОБЯЗАТЕЛЬНО.`;
   }
 
   let roleInstruction = "";
   if (agent.style === 'Scalper') {
-    roleInstruction = `Твоя задача: Ловить быстрые движения цены (Скальпинг).`;
+    roleInstruction = `Задача: Быстрый скальпинг. Смотри на дисбаланс в стакане.`;
   } else if (agent.style === 'Swing') {
-    roleInstruction = `Твоя задача: Искать надежные движения и не суетиться.`;
-  } else {
-    roleInstruction = `Твоя задача: Искать разницу цен на биржах.`;
+    roleInstruction = `Задача: Умный свинг. Ищи развороты тренда. Глубокий анализ.`;
+  } else if (agent.style === 'Arbitrage') {
+    roleInstruction = `Задача: Арбитраж. Сравнивай цены MEXC и Bitget.`;
   }
 
-  return `${baseInstruction} ${beginnerRules} ${learningContext} ${adaptationContext} ${roleInstruction} Отвечай JSON.`;
+  return `${baseInstruction} ${beginnerRules} ${learningContext} ${adaptationContext} ${roleInstruction} Отвечай строго валидным JSON.`;
 };
 
-export const analyzeMarket = async (data: MarketData[], agent: AgentProfile, currentPosition?: Position): Promise<AISignal> => {
+export const analyzeMarket = async (
+  data: MarketData[], 
+  agent: AgentProfile, 
+  currentPosition?: Position,
+  recentChatContext: string = ""
+): Promise<AISignal> => {
   const historySize = agent.model.includes('OpenRouter') ? 60 : 20;
   const recentHistory = data.slice(-historySize);
   const current = recentHistory[recentHistory.length - 1];
   
   const bidVol = current.orderBook.bids.reduce((acc, val) => acc + val[1], 0);
   const askVol = current.orderBook.asks.reduce((acc, val) => acc + val[1], 0);
-
-  // Check 20-minute mandatory activity rule
+  const volumeRatio = askVol > 0 ? bidVol / askVol : 1;
+  
   const timeSinceAction = Date.now() - (agent.lastActionTime || Date.now());
   const isUrgent = timeSinceAction > 20 * 60 * 1000;
   
   let prompt = `
-    Данные (BTC/USDT):
-    Цена сейчас: $${current.btcPrice.toFixed(2)}
-    Покупателей (объем): ${bidVol.toFixed(3)}
-    Продавцов (объем): ${askVol.toFixed(3)}
+    РЫНОК СЕЙЧАС (BTC/USDT):
+    Цена: $${current.btcPrice.toFixed(2)}
+    Давление покупателей: ${bidVol.toFixed(3)} BTC
+    Давление продавцов: ${askVol.toFixed(3)} BTC
+    Дисбаланс: ${volumeRatio > 1.2 ? "Сильные покупки" : volumeRatio < 0.8 ? "Сильные продажи" : "Нейтрально"}
     Твой баланс: $${agent.balance.toFixed(2)}
     
-    История цены (последние тики): ${recentHistory.map(h => h.btcPrice.toFixed(1)).join(', ')}
+    ЧАТ (КОНТЕКСТ):
+    ${recentChatContext || "Тишина..."}
   `;
 
-  let actionEnum = [];
+  // Specific Logic for Arbitrage Agent
+  if (agent.style === 'Arbitrage') {
+      prompt += `
+        АРБИТРАЖНЫЕ ДАННЫЕ:
+        MEXC Цена: $${current.mexcPrice.toFixed(2)}
+        Bitget Цена: $${current.bitgetPrice.toFixed(2)}
+        Спред: $${(Math.abs(current.mexcPrice - current.bitgetPrice)).toFixed(2)}
+        
+        Стратегия: Если спред > $50, торгуй агрессивно в сторону выравнивания.
+      `;
+  } else {
+      prompt += `
+        История (тиков): ${recentHistory.map(h => h.btcPrice.toFixed(1)).join(', ')}
+      `;
+  }
+
+  let actionEnum: string[] = [];
 
   if (currentPosition) {
      prompt += `
-       У ТЕБЯ ЕСТЬ ОТКРЫТАЯ ПОЗИЦИЯ:
-       Тип: ${currentPosition.side}
-       Вход: $${currentPosition.entryPrice}
-       Текущий PnL: $${currentPosition.pnl.toFixed(2)} (${currentPosition.pnlPercent.toFixed(2)}%)
+       У ТЕБЯ ПОЗИЦИЯ:
+       ${currentPosition.side} от $${currentPosition.entryPrice}
+       PnL: $${currentPosition.pnl.toFixed(2)} (${currentPosition.pnlPercent.toFixed(2)}%)
        
-       РЕШАЙ ПРЯМО СЕЙЧАС:
-       - ДЕРЖАТЬ (HOLD) - если уверен, что пойдет дальше в плюс.
-       - ЗАКРЫТЬ (CLOSE) - чтобы зафиксировать прибыль или убыток.
+       РЕШЕНИЕ:
+       - HOLD (Держать)
+       - CLOSE (Зафиксировать результат)
        
-       ${isUrgent ? "⛔ ВНИМАНИЕ: Прошло 20 минут без действий. Ты ОБЯЗАН ЗАКРЫТЬ позицию, чтобы сбросить таймер активности, если нет веских причин держать." : ""}
+       ${isUrgent ? "⛔ ВНИМАНИЕ: Тайм-аут активности (20 мин). ЗАКРЫВАЙ ПОЗИЦИЮ, если нет 100% уверенности в росте." : ""}
      `;
      actionEnum = [TradeAction.HOLD, TradeAction.CLOSE];
   } else {
      prompt += `
        Позиций нет.
-       РЕШАЙ ПРЯМО СЕЙЧАС:
-       - Покупаем (LONG)?
-       - Продаем (SHORT)?
-       - Ждем (WAIT)?
+       РЕШЕНИЕ:
+       - LONG (Рост)
+       - SHORT (Падение)
        
-       ${isUrgent ? "⛔ ВНИМАНИЕ: Прошло 20 минут без действий. Ты ОБЯЗАН ОТКРЫТЬ СДЕЛКУ (LONG или SHORT) прямо сейчас. WAIT запрещен." : ""}
+       ⛔ "WAIT" ЗАПРЕЩЕНО. ТЫ ОБЯЗАН СДЕЛАТЬ СТАВКУ.
      `;
-     actionEnum = [TradeAction.LONG, TradeAction.SHORT, TradeAction.WAIT];
+     actionEnum = [TradeAction.LONG, TradeAction.SHORT];
   }
 
-  prompt += `\nОбоснование: ОЧЕНЬ ПРОСТО, как для ребенка. Ответь строго JSON.`;
+  prompt += `\nНапиши JSON с ключами: action, reasoning (четкое объяснение почему), stopLoss, takeProfit, leverage (x10-x50), confidence (0-100).`;
 
   // --- HYBRID MODEL ROUTING ---
   if (agent.model.includes('OpenRouter')) {
      try {
-       const system = getSystemInstruction(agent) + `\nExpected JSON Format: { "action": "LONG"|"SHORT"|"WAIT"|"HOLD"|"CLOSE", "entryZone": "string", "stopLoss": number, "takeProfit": number, "leverage": number, "confidence": number, "reasoning": "string" }`;
+       const system = getSystemInstruction(agent) + `\nExpected JSON Format: { "action": "${actionEnum.join('|')}", "entryZone": "market", "stopLoss": number, "takeProfit": number, "leverage": number, "confidence": number, "reasoning": "string" }`;
        const textResponse = await callOpenRouterAI(system, prompt, true);
        
        let result;
@@ -190,30 +212,38 @@ export const analyzeMarket = async (data: MarketData[], agent: AgentProfile, cur
           result = JSON.parse(textResponse);
        } catch (e) {
           console.warn("OpenRouter JSON parse error, raw:", textResponse);
-          result = { action: "WAIT", reasoning: "Ошибка обработки мыслей DeepSeek..." };
+          // Fallback logic
+          const isTrendUp = current.btcPrice > recentHistory[0].btcPrice;
+          result = { 
+            action: currentPosition ? "HOLD" : (isTrendUp ? "LONG" : "SHORT"), 
+            reasoning: "Ошибка анализа, иду по тренду." 
+          };
        }
        
-       if (!result.stopLoss) result.stopLoss = current.btcPrice * 0.99;
-       if (!result.takeProfit) result.takeProfit = current.btcPrice * 1.01;
+       // Force valid action if model hallucinated "WAIT"
+       if (!actionEnum.includes(result.action)) {
+          if (!currentPosition) {
+             const isTrendUp = current.btcPrice > recentHistory[0].btcPrice;
+             result.action = isTrendUp ? TradeAction.LONG : TradeAction.SHORT;
+             result.reasoning += " (Wait запрещен -> принудительный вход)";
+          } else {
+             result.action = TradeAction.HOLD; 
+          }
+       }
+
+       // Smart default SL/TP if missing
+       if (!result.stopLoss) result.stopLoss = result.action === 'LONG' ? current.btcPrice * 0.995 : current.btcPrice * 1.005;
+       if (!result.takeProfit) result.takeProfit = result.action === 'LONG' ? current.btcPrice * 1.01 : current.btcPrice * 0.99;
        if (!result.leverage) result.leverage = 20;
        if (!result.confidence) result.confidence = 50;
        
        return { ...result, agentId: agent.id } as AISignal;
      } catch (e) {
        console.error("OpenRouter failed", e);
-       return {
-         agentId: agent.id,
-         action: currentPosition ? TradeAction.HOLD : TradeAction.WAIT,
-         entryZone: "---",
-         stopLoss: 0,
-         takeProfit: 0,
-         leverage: 1,
-         confidence: 0,
-         reasoning: "Потеряна связь с OpenRouter..."
-       };
+       return createFallbackSignal(agent, current, currentPosition, recentHistory);
      }
   } else {
-    // Gemini Logic (Standard)
+    // Gemini Logic
     try {
       const response = await ai.models.generateContent({
         model: MODEL_LIGHT,
@@ -239,23 +269,39 @@ export const analyzeMarket = async (data: MarketData[], agent: AgentProfile, cur
 
       if (response.text) {
         const result = JSON.parse(response.text);
+        
+        // Strict Validation
+        if (!actionEnum.includes(result.action)) {
+           if (!currentPosition) {
+              const isTrendUp = current.btcPrice > recentHistory[0].btcPrice;
+              result.action = isTrendUp ? TradeAction.LONG : TradeAction.SHORT;
+              result.reasoning = "[Система] Wait запрещен. Вход по тренду.";
+           } else {
+             result.action = TradeAction.HOLD;
+           }
+        }
         return { ...result, agentId: agent.id } as AISignal;
       }
       throw new Error("No text");
     } catch (error: any) {
-      // Rate limit or other error
-      return {
-        agentId: agent.id,
-        action: currentPosition ? TradeAction.HOLD : TradeAction.WAIT,
-        entryZone: "---",
-        stopLoss: 0,
-        takeProfit: 0,
-        leverage: 1,
-        confidence: 0,
-        reasoning: "Раздумываю (API лимит)..."
-      };
+      return createFallbackSignal(agent, current, currentPosition, recentHistory);
     }
   }
+};
+
+// Helper for failures
+const createFallbackSignal = (agent: AgentProfile, current: MarketData, currentPosition: Position | undefined, history: MarketData[]): AISignal => {
+  const isTrendUp = current.btcPrice > history[0].btcPrice;
+  return {
+    agentId: agent.id,
+    action: currentPosition ? TradeAction.HOLD : (isTrendUp ? TradeAction.LONG : TradeAction.SHORT), 
+    entryZone: "---",
+    stopLoss: isTrendUp ? current.btcPrice * 0.99 : current.btcPrice * 1.01,
+    takeProfit: isTrendUp ? current.btcPrice * 1.01 : current.btcPrice * 0.99,
+    leverage: 10,
+    confidence: 0,
+    reasoning: "Сбой связи, аварийный режим."
+  };
 };
 
 export const getTeamDiscussion = async (
@@ -266,10 +312,15 @@ export const getTeamDiscussion = async (
   if (recentData.length === 0) return [];
   const sortedAgents = [...agents].sort((a, b) => b.balance - a.balance);
   const prompt = `
-    СИТУАЦИЯ ЗА 5 МИНУТ: Цена BTC изменилась.
-    ЛИДЕР: ${sortedAgents[0].name}.
-    ОСТАЛЬНЫЕ: ${sortedAgents.slice(1).map(a => a.name).join(', ')}.
-    Сгенерируй диалог (3 реплики). Лидер говорит первый.
+    СИТУАЦИЯ ЗА 5 МИНУТ: Цена BTC $${recentData[recentData.length-1].btcPrice}.
+    ЛИДЕР: ${sortedAgents[0].name} (Баланс $${sortedAgents[0].balance}).
+    АУТСАЙДЕР: ${sortedAgents[sortedAgents.length-1].name} (Баланс $${sortedAgents[sortedAgents.length-1].balance}).
+    
+    Сгенерируй диалог (3 реплики). 
+    1. Лидер хвалит себя или ругает рынок.
+    2. Аутсайдер оправдывается.
+    3. Третий предлагает идею.
+    
     Format: JSON Array [{ "agentId": "Name", "text": "..." }]
   `;
   try {
@@ -291,12 +342,11 @@ export const getTeamDiscussion = async (
 
 export const getMeetingConclusion = async (agents: AgentProfile[], marketHistory: MarketData[]) => {
    const current = marketHistory[marketHistory.length - 1];
-   const prompt = `Ты - Главный Наставник. Цена BTC: $${current.btcPrice.toFixed(2)}. Дай ОДИН совет новичку. "ВЫВОД: ..."`;
-   // Using Gemini for conclusion to save OpenRouter calls
+   const prompt = `Ты - Главный Наставник. Цена BTC: $${current.btcPrice.toFixed(2)}. Дай ОДИН совет новичку и объясни почему. "ВЫВОД: ... потому что ..."`;
    try {
      const response = await ai.models.generateContent({ model: MODEL_LIGHT, contents: prompt });
      return response.text;
-   } catch (e) { return "Вывод: Будьте осторожны."; }
+   } catch (e) { return "Вывод: Будьте осторожны на волатильности."; }
 }
 
 export const performStrategicReview = async (agents: AgentProfile[]): Promise<{ agentId: string, adaptation: string }[]> => {
@@ -305,7 +355,6 @@ export const performStrategicReview = async (agents: AgentProfile[]): Promise<{ 
     Format JSON: [{ "agentId": "id", "adaptation": "совет" }]
   `;
   try {
-    // Try OpenRouter for deeper strategy if available
     const text = await callOpenRouterAI("Ты стратегический аналитик.", prompt, true);
     return JSON.parse(text);
   } catch (e) { return []; }
@@ -313,25 +362,29 @@ export const performStrategicReview = async (agents: AgentProfile[]): Promise<{ 
 
 export const getConsensusForecast = async (marketData: MarketData): Promise<MarketPrediction | null> => {
   const prompt = `
-    Главный Советник (OpenRouter/DeepSeek). 
+    Ты - Главный Советник (DeepSeek R1). 
     Цена BTC: $${marketData.btcPrice.toFixed(2)}.
-    Дай прогноз на 15 минут вперед.
-    Формат JSON: { "priceMin": number, "priceMax": number, "reasoning": "string" }
+    Твоя задача: Дать точный прогноз на 15 минут вперед.
+    
+    Учти волатильность и стакан.
+    
+    Формат JSON: { "priceMin": number, "priceMax": number, "predictedPrice": number, "reasoning": "string (макс 10 слов)" }
   `;
   try {
-    const text = await callOpenRouterAI("Ты аналитик рынка.", prompt, true);
+    const text = await callOpenRouterAI("Ты аналитик рынка. Думай глубоко.", prompt, true);
     let json: any = {};
     
     try {
       json = JSON.parse(text);
     } catch (e) {
       console.warn("Forecast JSON parse error, defaulting", text);
+      json = {}; // Fallback logic below
     }
 
-    // Safety Defaults: If AI returns malformed JSON, define defaults to prevent UI crash
-    const priceMin = typeof json.priceMin === 'number' ? json.priceMin : marketData.btcPrice * 0.995;
-    const priceMax = typeof json.priceMax === 'number' ? json.priceMax : marketData.btcPrice * 1.005;
-    const reasoning = json.reasoning || "Анализ волатильности (данные ограничены)...";
+    const priceMin = typeof json.priceMin === 'number' ? json.priceMin : marketData.btcPrice * 0.998;
+    const priceMax = typeof json.priceMax === 'number' ? json.priceMax : marketData.btcPrice * 1.002;
+    const predictedPrice = typeof json.predictedPrice === 'number' ? json.predictedPrice : marketData.btcPrice;
+    const reasoning = json.reasoning || "Консолидация цен...";
 
     return {
       id: crypto.randomUUID(),
@@ -339,6 +392,7 @@ export const getConsensusForecast = async (marketData: MarketData): Promise<Mark
       targetTime: Date.now() + (15 * 60 * 1000),
       priceMin,
       priceMax,
+      predictedPrice,
       reasoning,
       status: 'PENDING'
     };
@@ -352,7 +406,7 @@ export const chatWithAgent = async (
   history: {sender: 'USER'|'AGENT', text: string}[]
 ): Promise<string> => {
   const historyText = history.slice(-5).map(h => `${h.sender === 'USER' ? 'Пользователь' : agent.name}: ${h.text}`).join('\n');
-  const prompt = `Ты ${agent.name}. Баланс $${agent.balance}. Цена BTC $${currentPrice}. История: ${historyText}. Вопрос: "${userMessage}". Ответь кратко.`;
+  const prompt = `Ты ${agent.name}. Баланс $${agent.balance.toFixed(2)}. Цена BTC $${currentPrice}. История: ${historyText}. Вопрос: "${userMessage}". Ответь кратко (как в чате Telegram).`;
   
   if (agent.model.includes('OpenRouter')) {
      return await callOpenRouterAI(`Ты ${agent.name}.`, prompt, false);
