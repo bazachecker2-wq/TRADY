@@ -6,37 +6,55 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ onOpenPuter }) => {
-  const [viewers, setViewers] = useState(12403);
-  const [dailyVisits, setDailyVisits] = useState(452109);
-  const [monthlyVisits, setMonthlyVisits] = useState(12890400);
+  // Initialize strictly from LocalStorage to prevent resetting on reload
+  const [viewers, setViewers] = useState<number>(() => {
+    const saved = localStorage.getItem('analytics_viewers');
+    return saved ? parseInt(saved) : 12403;
+  });
+
+  const [dailyVisits, setDailyVisits] = useState<number>(() => {
+    const saved = localStorage.getItem('analytics_daily');
+    return saved ? parseInt(saved) : 452109;
+  });
+
+  const [monthlyVisits, setMonthlyVisits] = useState<number>(() => {
+    const saved = localStorage.getItem('analytics_monthly');
+    return saved ? parseInt(saved) : 12890400;
+  });
 
   useEffect(() => {
-    const storedDaily = localStorage.getItem('analytics_daily');
-    const storedMonthly = localStorage.getItem('analytics_monthly');
-    const lastVisit = localStorage.getItem('analytics_last_ts');
+    // 1. Persist current values immediately on mount (if they were defaults)
+    localStorage.setItem('analytics_viewers', viewers.toString());
+    localStorage.setItem('analytics_daily', dailyVisits.toString());
+    localStorage.setItem('analytics_monthly', monthlyVisits.toString());
 
-    let currentDaily = storedDaily ? parseInt(storedDaily) : 452109;
-    let currentMonthly = storedMonthly ? parseInt(storedMonthly) : 12890400;
-
-    const now = Date.now();
-    if (!lastVisit || (now - parseInt(lastVisit) > 600000)) {
-       currentDaily += Math.floor(Math.random() * 5) + 1;
-       currentMonthly += Math.floor(Math.random() * 5) + 1;
-       localStorage.setItem('analytics_daily', currentDaily.toString());
-       localStorage.setItem('analytics_monthly', currentMonthly.toString());
-       localStorage.setItem('analytics_last_ts', now.toString());
-    }
-
-    setDailyVisits(currentDaily);
-    setMonthlyVisits(currentMonthly);
-
-    const hour = new Date().getHours();
-    const baseViewers = 12000 + (hour * 150);
-    setViewers(baseViewers + Math.floor(Math.random() * 500));
-
+    // 2. Realistic Simulation Loop
     const interval = setInterval(() => {
-      setViewers(prev => prev + (Math.floor(Math.random() * 15) - 7));
-      if (Math.random() > 0.7) setDailyVisits(prev => prev + 1);
+      // Live Viewers fluctuation (Random walk)
+      setViewers(prev => {
+         const change = Math.floor(Math.random() * 7) - 3; // -3 to +3
+         const newVal = Math.max(1000, prev + change);
+         localStorage.setItem('analytics_viewers', newVal.toString());
+         return newVal;
+      });
+
+      // Daily Visits - Always monotonic increase (simulating new traffic)
+      if (Math.random() > 0.7) {
+         setDailyVisits(prev => {
+             const newVal = prev + Math.floor(Math.random() * 3) + 1;
+             localStorage.setItem('analytics_daily', newVal.toString());
+             return newVal;
+         });
+      }
+      
+      // Monthly Visits - Slower monotonic increase
+      if (Math.random() > 0.9) {
+        setMonthlyVisits(prev => {
+            const newVal = prev + Math.floor(Math.random() * 5) + 1;
+            localStorage.setItem('analytics_monthly', newVal.toString());
+            return newVal;
+        });
+      }
     }, 2000);
 
     return () => clearInterval(interval);
@@ -70,18 +88,18 @@ const Header: React.FC<HeaderProps> = ({ onOpenPuter }) => {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
             </span>
-            <span className="font-mono font-bold">{viewers?.toLocaleString('ru-RU') ?? '...'} ОНЛАЙН</span>
+            <span className="font-mono font-bold">{viewers.toLocaleString('ru-RU')} ОНЛАЙН</span>
           </div>
         </div>
 
         <div className="hidden lg:flex gap-6 border-l border-gray-800 pl-6">
            <div className="text-right">
               <div className="text-[10px] text-gray-500 uppercase tracking-wider">Визитов сегодня</div>
-              <div className="text-xs font-mono font-bold text-gray-300">{dailyVisits?.toLocaleString('ru-RU') ?? '...'}</div>
+              <div className="text-xs font-mono font-bold text-gray-300">{dailyVisits.toLocaleString('ru-RU')}</div>
            </div>
            <div className="text-right">
               <div className="text-[10px] text-gray-500 uppercase tracking-wider">Визитов за месяц</div>
-              <div className="text-xs font-mono font-bold text-gray-300">{((monthlyVisits || 0) / 1000000).toFixed(2)}M+</div>
+              <div className="text-xs font-mono font-bold text-gray-300">{(monthlyVisits / 1000000).toFixed(2)}M+</div>
            </div>
         </div>
       </div>

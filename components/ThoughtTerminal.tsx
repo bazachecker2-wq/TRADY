@@ -24,9 +24,9 @@ const ThoughtTerminal: React.FC<ThoughtTerminalProps> = ({ messages, agents, pha
   };
 
   return (
-    <div className="bg-[#13161c] rounded-xl border border-gray-800 shadow-xl overflow-hidden flex flex-col h-[300px] md:h-full">
+    <div className="bg-[#13161c] rounded-xl border border-gray-800 shadow-xl overflow-hidden flex flex-col h-[500px] md:h-[600px]">
       {/* Header with Phase Status */}
-      <div className="px-4 py-3 border-b border-gray-800 bg-[#0b0d11] flex justify-between items-center">
+      <div className="px-4 py-3 border-b border-gray-800 bg-[#0b0d11] flex justify-between items-center flex-shrink-0">
         <h3 className="font-bold text-xs text-gray-300 uppercase tracking-widest flex items-center gap-2">
           <span>💭</span> Чат Трейдеров
         </h3>
@@ -46,7 +46,7 @@ const ThoughtTerminal: React.FC<ThoughtTerminalProps> = ({ messages, agents, pha
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
         {messages.length === 0 && (
            <div className="text-center text-gray-600 text-xs italic mt-10">
              Ожидание...

@@ -1,5 +1,4 @@
 
-
 export enum TradeAction {
   LONG = 'LONG',
   SHORT = 'SHORT',
@@ -48,7 +47,7 @@ export interface Position {
   pnl: number;
   pnlPercent: number;
   status: 'OPEN' | 'CLOSED';
-  closeReason?: 'TP' | 'SL' | 'MANUAL';
+  closeReason?: 'TP' | 'SL' | 'MANUAL' | 'TIME_LIMIT';
   trailingActive: boolean; 
 }
 
@@ -57,11 +56,14 @@ export interface AgentProfile {
   name: string;
   model: string; // e.g., 'Gemini 2.5', 'Kimi K12 (Puter)'
   style: 'Scalper' | 'Swing' | 'Arbitrage';
+  status: 'ACTIVE' | 'ELIMINATED'; // New status for bankruptcy
   color: string;
   avatar: string;
   description: string;
   balance: number; // Realized Cash (Free to bet)
   equity: number; // Dynamic Wallet (Cash + Floating PnL + Locked Margin)
+  wins: number; // Total profitable trades
+  losses: number; // Total losing trades
   winRate: number;
   tradesCount: number;
   recentPerformance: ('WIN' | 'LOSS')[]; // Memory for In-Context Learning
@@ -78,6 +80,7 @@ export interface AISignal {
   takeProfit: number;
   leverage: number;
   confidence: number;
+  betPercentage: number; // 1 to 100% of available balance
   reasoning: string;
   betAmount?: number; // The calculated dollar amount for this trade
 }
@@ -114,7 +117,18 @@ export interface MarketPrediction {
   priceMin: number;
   priceMax: number;
   predictedPrice: number; // Specific target prediction
+  supportLevel: number; // New detailed level
+  resistanceLevel: number; // New detailed level
+  keyDrivers: string; // New context
   reasoning: string;
   status: 'PENDING' | 'SUCCESS' | 'FAILED';
   finalPrice?: number;
+}
+
+export interface NewsItem {
+  id: string;
+  text: string;
+  sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  source: string; // e.g., 'Bloomberg', 'CoinDesk', 'WhaleAlert'
+  timestamp: number;
 }

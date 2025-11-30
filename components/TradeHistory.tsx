@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Position, AgentProfile, MarketData } from '../types';
 import { formatCurrency } from '../services/marketService';
@@ -15,8 +16,8 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ positions, agents, currentP
   const closedPositions = positions.filter(p => p.status === 'CLOSED').sort((a, b) => b.openTime - a.openTime);
 
   return (
-    <div className="bg-[#13161c] rounded-xl border border-gray-800 overflow-hidden min-h-[300px] flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-800 bg-[#0b0d11] flex justify-between items-center">
+    <div className="bg-[#13161c] rounded-xl border border-gray-800 overflow-hidden flex flex-col h-[350px]">
+      <div className="px-4 py-3 border-b border-gray-800 bg-[#0b0d11] flex justify-between items-center flex-shrink-0">
         <div className="flex gap-4">
            <button 
              onClick={() => setActiveTab('OPEN')}
@@ -37,20 +38,20 @@ const TradeHistory: React.FC<TradeHistoryProps> = ({ positions, agents, currentP
         )}
       </div>
 
-      <div className="overflow-x-auto flex-1">
+      <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
         <table className="w-full text-left text-xs text-gray-400">
-          <thead className="bg-[#1a1d24] text-gray-500 font-medium uppercase">
+          <thead className="bg-[#1a1d24] text-gray-500 font-medium uppercase sticky top-0 z-10 shadow-sm">
             <tr>
-              <th className="px-4 py-2">Агент</th>
-              <th className="px-4 py-2">Действие</th>
-              <th className="px-4 py-2">Цена Входа</th>
+              <th className="px-4 py-2 bg-[#1a1d24]">Агент</th>
+              <th className="px-4 py-2 bg-[#1a1d24]">Действие</th>
+              <th className="px-4 py-2 bg-[#1a1d24]">Цена Входа</th>
               {activeTab === 'OPEN' ? (
-                  <th className="px-4 py-2">Тек. Цена</th>
+                  <th className="px-4 py-2 bg-[#1a1d24]">Тек. Цена</th>
               ) : (
-                  <th className="px-4 py-2">Причина закрытия</th>
+                  <th className="px-4 py-2 bg-[#1a1d24]">Причина закрытия</th>
               )}
-              {activeTab === 'OPEN' && <th className="px-4 py-2">Цели</th>}
-              <th className="px-4 py-2 text-right">Результат (PnL)</th>
+              {activeTab === 'OPEN' && <th className="px-4 py-2 bg-[#1a1d24]">Цели</th>}
+              <th className="px-4 py-2 text-right bg-[#1a1d24]">Результат (PnL)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
